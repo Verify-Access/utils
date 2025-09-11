@@ -258,6 +258,20 @@ const LOG_OBJECT = {
         this.protocol = "OTP";
         this.type = "SESSION";
         this.user = "" + stsuu.getPrincipalName()
+    },
+
+    doingAccessPolicy: function () {
+        request = context.getRequest();
+        user = context.getUser();
+
+        this.protocol = "ACCESS_POLICY";
+        this.type = "DECISION";
+        this.event = "LOGIN";
+        this.user = user ? "" + user.username : "unauthenticated";
+        this.partner = "" + context.getProtocolContext().getClientId();
+        this.webseal = request.getHeader("iv_server_name");
+        this.srcIp = request.getHeader("x-forwarded-for") ? request.getHeader("x-forwarded-for") : request.getHeader("iv-remote-address");
+        this.user_agent = request.getHeader("User-Agent");
     }
 }
 
