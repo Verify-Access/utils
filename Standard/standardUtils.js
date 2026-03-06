@@ -260,55 +260,204 @@ var inputValidate = new function () {
      * @returns {boolean} Returns `true` if URL contains expected host, else returns `false`.
      */
     this.host = function (fullUrl, hostToLookFor) {
-        var regex = /^(([^:\/?#]+):)?(\/\/([^\/?#:\\]*))?([^?#]*)(\?([^#]*))?(#(.*))?/;
-        var found = fullUrl.match(regex);
-        var isValid = false;
-
-        if (hostToLookFor.startsWith(".")) {
-            // Partial host name provided.
-            if (found[4].endsWith(hostToLookFor) && !found[4].includes('@') && !found[5].includes('@')) {
-                var isValid = true;
-            }
-        } else {
-            // Full host name provided.
-            if (found[4] == hostToLookFor) {
-                var isValid = true;
-            }
+        // Input validation
+        if (!fullUrl || typeof fullUrl !== 'string' || !hostToLookFor || typeof hostToLookFor !== 'string' || hostToLookFor === "." || hostToLookFor === "") {
+            logger.warning("inputValidate.host: Invalid input parameters");
+            return false;
         }
-
+        
+        // URL parsing regex - RFC 3986 compliant
+        var regex = /^(([^:\/?#]+):)?(\/\/([^\/?#]*))?([^?#]*)(\?([^#]*))?(#(.*))?/;
+        var found = fullUrl.match(regex);
+        
+        // Validate regex matched and host exists
+        if (!found || !found[4]) {
+            logger.warning("inputValidate.host: Invalid URL format: " + fullUrl);
+            return false;
+        }
+        
+        // Extract host and remove port if present
+        var host = found[4].split(':')[0].toLowerCase();
+        var hostToMatch = hostToLookFor.toLowerCase();
+        
+        // Check for malicious characters
+        if (host.includes('@') || host.includes('\\') || host.includes(' ')) {
+            logger.warning("inputValidate.host: Suspicious characters in host: " + host);
+            return false;
+        }
+        
+        var isValid = false;
+        
+        if (hostToMatch.startsWith(".")) {
+            // Partial host name
+            isValid = host.endsWith(hostToMatch) || host === hostToMatch.substring(1);
+        } else {
+            // Full host name
+            isValid = (host === hostToMatch);
+        }
+        
         return isValid;
-    }
+    };
 
     /**
-     * Validate email is an email.
+     * Validate URL is well-formed and uses allowed protocols
+     * @param {string} url URL to validate
+     * @param {Array<string>} allowedProtocols Allowed protocols (default: ['http', 'https'])
+     * @returns {boolean} True if valid URL
+     */
+    this.url = function (url, allowedProtocols) {
+        // Input validation.
+        if (!url || typeof url !== 'string') {
+            return false;
+        }
+        
+        allowedProtocols = allowedProtocols || ['http', 'https'];
+        
+        try {
+            var regex = /^(([^:\/?#]+):)?(\/\/([^\/?#]*))?([^?#]*)(\?([^#]*))?(#(.*))?/;
+            var match = url.match(regex);
+            
+            if (!match || !match[2] || !match[4]) {
+                return false;
+            }
+            
+            var protocol = match[2].toLowerCase();
+            return allowedProtocols.indexOf(protocol) !== -1;
+        } catch (e) {
+            return false;
+        }
+    };
+
+    /**
+     * Validate an email is an email per RFC 5321.
      * @param {string} email Email to validate.
      * @returns {boolean} Returns `true` if string is an email, else returns `false`.
      */
     this.email = function (email) {
-        var regex = /^[a-zA-Z0-9.!#$%&'*+\/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*$/;
-        var isValid = false;
-
-        if (email.match(regex)) {
-            var isValid = true;
+        // Input validation.
+        if (!email || typeof email !== 'string') {
+            return false;
         }
-
-        return isValid;
-    }
+        
+        // Total address length check.
+        if (email.length > 254) {
+            return false;
+        }
+        
+        // Comprehensive email regex
+        var regex = /^[a-zA-Z0-9.!#$%&'*+\/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
+        
+        // Check for consecutive dots.
+        if (email.includes('..')) {
+            return false;
+        }
+        
+        var parts = email.split('@');
+        // Add check for leading/trailing dots in local part.
+        if (parts[0].startsWith('.') || parts[0].endsWith('.')) {
+            return false;
+        }
+        // Multiple @ symbols.
+        if (parts.length !== 2) {
+            return false;
+        }
+        // Check local part length.
+        if (parts[0].length > 64) {
+            return false;
+        }
+        
+        return regex.test(email);
+    };
 
     /**
      * Determine the type of the value.
      * @param {*} input Value to determine type of.
-     * @returns {object} Returns either, `object | boolean | integer | string`
+     * @returns {string} Returns one of: "null", "undefined", "array", "object", "boolean", "integer", "float", "string"
      */
     this.determineType = function (input) {
-        if (typeof input === "object" || input.startsWith('{') || input.startsWith('[')) {
-            return "object";
-        } else if (input === "true" || input === "false") {
+        // Handle null and undefined explicitly.
+        if (input === null) {
+            return "null";
+        }
+        if (input === undefined) {
+            return "undefined";
+        }
+        
+        // Check actual JavaScript type first.
+        var jsType = typeof input;
+        
+        if (jsType === "object") {
+            // Distinguish between array and object.
+            return Array.isArray(input) ? "array" : "object";
+        }
+        
+        if (jsType === "boolean") {
             return "boolean";
-        } else if (Number.isInteger(Number(input)) && input) {
-            return "integer";
-        } else {
+        }
+        
+        if (jsType === "number") {
+            return Number.isInteger(input) ? "integer" : "float";
+        }
+        
+        // For strings, try to infer the intended type.
+        if (jsType === "string") {
+            // Empty string
+            if (input === "") {
+                return "string";
+            }
+            
+            // Check for JSON object/array.
+            if ((input.startsWith('{') && input.endsWith('}')) || 
+                (input.startsWith('[') && input.endsWith(']'))) {
+                try {
+                    JSON.parse(input);
+                    return "object";
+                } catch (e) {
+                    return "string";
+                }
+            }
+            
+            // Check for boolean strings.
+            if (input === "true" || input === "false") {
+                return "boolean";
+            }
+            
+            // Check for numeric strings.
+            var num = Number(input);
+            if (!isNaN(num) && input.trim() !== "") {
+                return Number.isInteger(num) ? "integer" : "float";
+            }
+            
             return "string";
         }
-    }
+        
+        // Fallback for any other types.
+        return jsType;
+    };
+
+    /**
+     * Validate UUID format (v4)
+     * @param {string} uuid UUID string to validate
+     * @returns {boolean} True if valid UUID
+     */
+    this.uuid = function (uuid) {
+        if (!uuid || typeof uuid !== 'string') {
+            return false;
+        }
+        var regex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+        return regex.test(uuid);
+    };
+
+    /**
+     * Validate JWT format (basic structure check)
+     * @param {string} token JWT token to validate
+     * @returns {boolean} True if valid JWT structure
+     */
+    this.jwt = function (token) {
+        if (!token || typeof token !== 'string') {
+            return false;
+        }
+        var regex = /^[A-Za-z0-9_-]+=*\.[A-Za-z0-9_-]+=*\.[A-Za-z0-9_-]*=*$/;
+        return regex.test(token);
+    };
 }
