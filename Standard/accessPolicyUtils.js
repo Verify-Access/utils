@@ -35,6 +35,29 @@ var accessPolicy = new function () {
         
         return returnHeaders;
     },
+    this.getCookies = function () {
+        var request = context.getRequest();
+        if (!request) {
+            logger.warning("accessPolicy.getCookies: Request object is null");
+            return {};
+        }
+
+        cookieHeader = request.getHeader("Cookie");
+        if (cookieHeader) {
+            var cookies = cookieHeader.split(';');
+            var cookieMap = {};
+            for (var i = 0; i < cookies.length; i++) {
+                var cookie = cookies[i].trim();
+                var parts = cookie.split('=');
+                if (parts.length === 2) {
+                    cookieMap[parts[0]] = parts[1];
+                }
+            }
+            return cookieMap;
+        }
+        // Default to an empty object if no cookies are present.
+        return {};
+    },
     /**
      * Returns the parameters of the request as a JSON object.
      * @returns {Object} The parameter names and values in a JSON object.
@@ -101,6 +124,7 @@ var accessPolicy = new function () {
         return {
             headers: this.getHeaders(),
             parameters: this.getParameters(),
+            cookies: this.getCookies(),
             user: this.getUserContext(),
             client: "" + context.getProtocolContext().getClientId(),
             request_params: JSON.parse(context.getProtocolContext().getAuthenticationRequest().toString())
