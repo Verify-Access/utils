@@ -37,26 +37,24 @@ var accessPolicy = new function () {
     },
     this.getCookies = function () {
         var request = context.getRequest();
+        var cookieMap = {};
         if (!request) {
             logger.warning("accessPolicy.getCookies: Request object is null");
-            return {};
+            return cookieMap;
         }
 
         cookieHeader = request.getHeader("Cookie");
         if (cookieHeader) {
             var cookies = cookieHeader.split(';');
-            var cookieMap = {};
             for (var i = 0; i < cookies.length; i++) {
                 var cookie = cookies[i].trim();
-                var parts = cookie.split('=');
-                if (parts.length === 2) {
-                    cookieMap[parts[0]] = parts[1];
-                }
+                var index = cookie.indexOf('=');
+                var key = cookie.silce(0, index);
+                var value = cookie.slice(index + 1);
+                cookieMap["" + key] = "" + value;
             }
-            return cookieMap;
         }
-        // Default to an empty object if no cookies are present.
-        return {};
+        return cookieMap;
     },
     /**
      * Returns the parameters of the request as a JSON object.
